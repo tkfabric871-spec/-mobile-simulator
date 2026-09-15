@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Simulator</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f2f3f5;
+            color: #222;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            padding: 25px;
+        }
+
+        h1 {
+            margin-top: 0;
+            margin-bottom: 25px;
+        }
+
+        .main {
+            display: flex;
+            gap: 35px;
+            align-items: flex-start;
+        }
+
+        .controls {
+            width: 360px;
+            background: white;
+            padding: 22px;
+            border-radius: 14px;
+            box-shadow: 0 4px 15px rgba(0,0,0,.08);
+        }
+
+        .control-group {
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 7px;
+        }
+
+        input,
+        select,
+        button {
+            width: 100%;
+            padding: 11px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+        }
+
+        button {
+            cursor: pointer;
+            background: #111;
+            color: white;
+            border: none;
+            font-weight: 600;
+        }
+
+        button:hover {
+            opacity: .9;
+        }
+
+        button:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+
+        .secondary {
+            background: #eee;
+            color: #222;
+        }
+
+        .phone-area {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            padding-top: 5px;
+        }
+
+        /* =========================
+           PHONE FRAME
+        ========================= */
+
+        .phone {
+            width: 390px;
+            height: 780px;
+            background: #151515;
+            border-radius: 42px;
+            padding: 11px;
+            box-shadow:
+                0 15px 40px rgba(0,0,0,.25),
+                inset 0 0 0 2px rgba(255,255,255,.08);
+            position: relative;
+            transition:
+                width .25s ease,
+                height .25s ease,
+                border-radius .25s ease,
+                background .25s ease;
+        }
+
+        .phone-screen {
+            width: 100%;
+            height: 100%;
+            background: white;
+            border-radius: 32px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* =========================
+           IPHONE STYLES
+        ========================= */
+
+        .phone.iphone {
+            border-radius: 46px;
+            padding: 10px;
+        }
+
+        .phone.iphone .phone-screen {
+            border-radius: 37px;
+        }
+
+        .phone.iphone.dynamic-island .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 105px;
+            height: 28px;
+            background: #000;
+            border-radius: 20px;
+        }
+
+        .phone.iphone.notch .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 145px;
+            height: 31px;
+            background: #000;
+            border-radius: 0 0 18px 18px;
+        }
+
+        .phone.iphone.home-button .phone-screen::after {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 55px;
+            height: 5px;
+            background: #111;
+            border-radius: 10px;
+        }
+
+        .phone.iphone.se-model {
+            width: 350px;
+            height: 700px;
+            border-radius: 42px;
+        }
+
+        .phone.iphone.se-model .phone-screen {
+            border-radius: 34px;
+        }
+
+        /* =========================
+           ANDROID BASE
+        ========================= */
+
+        .phone.android {
+            border-radius: 30px;
+            padding: 9px;
+            background: #101010;
+        }
+
+        .phone.android .phone-screen {
+            border-radius: 23px;
+        }
+
+        /* =========================
+           SAMSUNG
+        ========================= */
+
+        .phone.samsung {
+            border-radius: 29px;
+            background: #111;
+        }
+
+        .phone.samsung .phone-screen {
+            border-radius: 23px;
+        }
+
+        .phone.samsung .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 9px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18px;
+            height: 18px;
+            background: #111;
+            border-radius: 50%;
+        }
+
+        /* =========================
+           PIXEL
+        ========================= */
+
+        .phone.pixel {
+            width: 380px;
+            border-radius: 38px;
+            background: #202124;
+        }
+
+        .phone.pixel .phone-screen {
+            border-radius: 30px;
+        }
+
+        .phone.pixel .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 9px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 17px;
+            height: 17px;
+            background: #111;
+            border-radius: 50%;
+        }
+
+        /* =========================
+           ONEPLUS
+        ========================= */
+
+        .phone.oneplus {
+            border-radius: 32px;
+            background: #181818;
+        }
+
+        .phone.oneplus .phone-screen {
+            border-radius: 25px;
+        }
+
+        .phone.oneplus .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 9px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18px;
+            height: 18px;
+            background: #111;
+            border-radius: 50%;
+        }
+
+        /* =========================
+           VIVO
+        ========================= */
+
+        .phone.vivo {
+            width: 375px;
+            border-radius: 35px;
+            background: #171717;
+        }
+
+        .phone.vivo .phone-screen {
+            border-radius: 28px;
+        }
+
+        .phone.vivo .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 9px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18px;
+            height: 18px;
+            background: #111;
+            border-radius: 50%;
+        }
+
+        /* =========================
+           OPPO
+        ========================= */
+
+        .phone.oppo {
+            width: 375px;
+            border-radius: 36px;
+            background: #111;
+        }
+
+        .phone.oppo .phone-screen {
+            border-radius: 29px;
+        }
+
+        .phone.oppo .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 9px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18px;
+            height: 18px;
+            background: #111;
+            border-radius: 50%;
+        }
+
+        /* =========================
+           XIAOMI
+        ========================= */
+
+        .phone.xiaomi {
+            width: 378px;
+            border-radius: 31px;
+            background: #171717;
+        }
+
+        .phone.xiaomi .phone-screen {
+            border-radius: 24px;
+        }
+
+        .phone.xiaomi .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 9px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 19px;
+            height: 19px;
+            background: #111;
+            border-radius: 50%;
+        }
+
+        /* =========================
+           INFINIX / TECNO / REALME
+        ========================= */
+
+        .phone.infinix,
+        .phone.tecno,
+        .phone.realme {
+            width: 380px;
+            border-radius: 27px;
+            background: #151515;
+        }
+
+        .phone.infinix .phone-screen,
+        .phone.tecno .phone-screen,
+        .phone.realme .phone-screen {
+            border-radius: 21px;
+        }
+
+        .phone.infinix .phone-screen::before,
+        .phone.tecno .phone-screen::before,
+        .phone.realme .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 9px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18px;
+            height: 18px;
+            background: #111;
+            border-radius: 50%;
+        }
+
+        /* =========================
+           MOTOROLA
+        ========================= */
+
+        .phone.motorola {
+            width: 375px;
+            border-radius: 34px;
+            background: #202020;
+        }
+
+        .phone.motorola .phone-screen {
+            border-radius: 27px;
+        }
+
+        .phone.motorola .phone-screen::before {
+            content: "";
+            position: absolute;
+            z-index: 20;
+            top: 9px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18px;
+            height: 18px;
+            background: #111;
+            border-radius: 50%;
+        }
+
+        /* =========================
+           STATUS BAR
+        ========================= */
+
+        .status-bar {
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 13px;
+            background: white;
+            font-size: 13px;
+            font-weight: 600;
+            position: relative;
+            z-index: 5;
+        }
+
+        .status-left {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .status-right {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .signal {
+            display: inline-flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 14px;
+        }
+
+        .signal span {
+            width: 3px;
+            background: #111;
+            border-radius: 1px;
+        }
+
+        .signal span:nth-child(1) {
+            height: 4px;
+        }
+
+        .signal span:nth-child(2) {
+            height: 7px;
+        }
+
+        .signal span:nth-child(3) {
+            height: 10px;
+        }
+
+        .signal span:nth-child(4) {
+            height: 13px;
+        }
+
+        .signal span.off {
+            background: #d5d5d5;
+        }
+
+        .wifi {
+            font-size: 15px;
+        }
+
+        .data {
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .battery {
+            width: 25px;
+            height: 12px;
+            border: 1.5px solid #111;
+            border-radius: 3px;
+            position: relative;
+            padding: 1px;
+        }
+
+        .battery::after {
+            content: "";
+            position: absolute;
+            right: -4px;
+            top: 3px;
+            width: 3px;
+            height: 5px;
+            background: #111;
+            border-radius: 0 2px 2px 0;
+        }
+
+        .battery-fill {
+            height: 100%;
+            width: 100%;
+            background: #111;
+            border-radius: 1px;
+        }
+
+        .battery-text {
+            font-size: 11px;
+        }
+
+        .web-area {
+            height: calc(100% - 38px);
+            overflow-y: auto;
+            background: white;
+        }
+
+        .welcome {
+            padding: 25px;
+            text-align: center;
+            color: #666;
+        }
+
+        .error {
+            margin: 20px;
+            padding: 15px;
+            background: #ffecec;
+            color: #b00020;
+            border-radius: 8px;
+        }
+
+        /* GOOGLE REVIEW */
+
+        .review-page {
+            min-height: 100%;
+            background: #fff;
+        }
+
+        .review-search {
+            padding: 12px 14px;
+            border-bottom: 1px solid #e5e5e5;
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 3;
+        }
+
+        .search-box {
+            height: 44px;
+            background: #f1f3f4;
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            gap: 10px;
+        }
+
+        .search-icon {
+            font-size: 18px;
+            color: #555;
+        }
+
+        .search-name {
+            font-size: 15px;
+            color: #202124;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .place-header {
+            padding: 18px 18px 8px;
+        }
+
+        .business-name {
+            font-size: 25px;
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 9px;
+            color: #202124;
+        }
+
+        .rating-line {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 4px;
+        }
+
+        .stars {
+            color: #f9ab00;
+            font-size: 19px;
+            letter-spacing: 1px;
+        }
+
+        .place-note {
+            font-size: 13px;
+            color: #777;
+            margin-top: 6px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 22px;
+            padding: 14px 18px 0;
+            border-bottom: 1px solid #ddd;
+            overflow-x: auto;
+        }
+
+        .tab {
+            white-space: nowrap;
+            padding-bottom: 11px;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .tab.active {
+            color: #1a73e8;
+            border-bottom: 2px solid #1a73e8;
+            font-weight: 600;
+        }
+
+        .section {
+            padding: 17px 18px;
+            border-bottom: 1px solid #eeeeee;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            color: #202124;
+        }
+
+        .info-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 11px;
+            padding: 7px 0;
+            font-size: 14px;
+            color: #333;
+            line-height: 1.4;
+        }
+
+        .info-icon {
+            width: 20px;
+            min-width: 20px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .check {
+            font-weight: bold;
+        }
+
+        .review-card {
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .review-card:last-child {
+            border-bottom: none;
+        }
+
+        .review-user {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .review-stars {
+            color: #f9ab00;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .review-text {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #444;
+        }
+
+        .review-date {
+            color: #777;
+            font-size: 12px;
+            margin-left: 6px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .copy-area {
+            margin-top: 15px;
+        }
+
+        @media (max-width: 850px) {
+            .main {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .controls {
+                width: 100%;
+                max-width: 500px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Mobile Simulator</h1>
+
+    <div class="main">
+
+        <div class="controls">
+
+            <div class="control-group">
+                <label>Google Review Link</label>
+                <input
+                    type="text"
+                    id="googleUrl"
+                    placeholder="Paste Google review link"
+                >
+            </div>
+
+            <div class="control-group">
+                <button id="openReview">Open Review</button>
+            </div>
+
+            <div class="control-group">
+                <label>Phone Style</label>
+
+                <select id="phoneStyle">
+                    <option value="iphone">iPhone</option>
+                    <option value="android">Android</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Phone Model</label>
+                <select id="phoneModel"></select>
+            </div>
+
+            <div class="control-group">
+                <label>Time</label>
+
+                <select id="timeMode">
+                    <option value="current">Use Current Time</option>
+                    <option value="custom">Custom Time</option>
+                </select>
+            </div>
+
+            <div class="control-group hidden" id="customTimeBox">
+                <label>Custom Time</label>
+                <input type="time" id="customTime">
+            </div>
+
+            <div class="control-group">
+                <label>Connection</label>
+
+                <select id="connection">
+                    <option value="wifi">Wi-Fi</option>
+                    <option value="data">Mobile Data</option>
+                    <option value="both">Wi-Fi + Mobile Data</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>SIM</label>
+
+                <select id="simCount">
+                    <option value="1">1 SIM</option>
+                    <option value="2">2 SIMs</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>SIM 1 Signal</label>
+
+                <select id="signal1">
+                    <option value="1">1 Bar</option>
+                    <option value="2">2 Bars</option>
+                    <option value="3">3 Bars</option>
+                    <option value="4">4 Bars</option>
+                    <option value="5">Full</option>
+                </select>
+            </div>
+
+            <div class="control-group hidden" id="signal2Box">
+                <label>SIM 2 Signal</label>
+
+                <select id="signal2">
+                    <option value="1">1 Bar</option>
+                    <option value="2">2 Bars</option>
+                    <option value="3">3 Bars</option>
+                    <option value="4">4 Bars</option>
+                    <option value="5">Full</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Battery</label>
+                <select id="battery"></select>
+            </div>
+
+            <div class="control-group">
+                <button id="captureBtn">Screenshot</button>
+            </div>
+
+            <div class="copy-area hidden" id="copyArea">
+                <button id="copyScreenshot" class="secondary">
+                    Copy Screenshot
+                </button>
+            </div>
+
+        </div>
+
+        <div class="phone-area">
+
+            <div
+                class="phone iphone dynamic-island"
+                id="phone"
+            >
+
+                <div class="phone-screen" id="phoneScreen">
+
+                    <div class="status-bar">
+
+                        <div class="status-left">
+                            <span id="statusTime">12:00</span>
+                        </div>
+
+                        <div class="status-right">
+
+                            <span id="signalContainer"></span>
+
+                            <span id="wifiIcon" class="wifi">
+                                ◉
+                            </span>
+
+                            <span id="dataIcon" class="data hidden">
+                                4G
+                            </span>
+
+                            <div class="battery">
+                                <div
+                                    class="battery-fill"
+                                    id="batteryFill"
+                                ></div>
+                            </div>
+
+                            <span
+                                class="battery-text"
+                                id="batteryText"
+                            >
+                                100%
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                    <div class="web-area" id="webArea">
+
+                        <div class="welcome">
+                            Paste a Google review link and click
+                            <strong>Open Review</strong>.
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
