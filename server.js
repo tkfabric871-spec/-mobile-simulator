@@ -2,19 +2,76 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
-const { URL } = require("url");
 
 const PORT = process.env.PORT || 3000;
-const MAX_REDIRECTS = 15;
+const HOST = "0.0.0.0";
 
-/* --------------------------------------------------
-   HTTP REQUEST
--------------------------------------------------- */
+function cleanBusinessName(name) {
+    if (!name) return null;
 
-function requestUrl(targetUrl, redirectCount = 0) {
+    try {
+        name = decodeURIComponent(name);
+    } catch {}
+
+    name = name
+        .replace(/\+/g, " ")
+        .replace(/%2F/gi, "/")
+        .replace(/%2C/gi, ",")
+        .replace(/%26/gi, "&")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (!name) return null;
+
+    return name;
+}
+
+function extractBusinessName(url) {
+    if (!url) return null;
+
+    try {
+        const u = new URL(url);
+
+        // /maps/place/Business+Name/
+        const placeMatch = u.pathname.match(
+            /\/maps\/(?:place|preview\/place)\/([^/]+)/i
+        );
+
+        if (placeMatch) {
+            return cleanBusinessName(placeMatch[1]);
+        }
+
+        // /maps/search/Business+Name
+        const searchMatch = u.pathname.match(
+            /\/maps\/search\/([^/]+)/i
+        );
+
+        if (searchMatch) {
+            return cleanBusinessName(searchMatch[1]);
+        }
+
+        // ?q=Business+Name
+        const params = ["q", "query", "destination"];
+
+        for (const key of params) {
+            const value = u.searchParams.get(key);
+
+            if (value) {
+                const cleaned = cleanBusinessName(value);
+
+                if (cleaned) {
+                    return cleaned;
+                }
+            }
+        }
+    } catch {}
+
+    return null;
+}
+
+function requestUrl(targetUrl, redirects = 0) {
     return new Promise((resolve, reject) => {
-
-        if (redirectCount > MAX_REDIRECTS) {
+        if (redirects > 15) {
             reject(new Error("Too many redirects"));
             return;
         }
@@ -23,60 +80,60 @@ function requestUrl(targetUrl, redirectCount = 0) {
 
         try {
             parsed = new URL(targetUrl);
-        } catch (error) {
+        } catch {
             reject(new Error("Invalid URL"));
             return;
         }
 
-        if (
-            parsed.protocol !== "http:" &&
-            parsed.protocol !== "https:"
-        ) {
-            reject(
-                new Error("Only HTTP and HTTPS URLs are supported")
-            );
-            return;
-        }
+        const client =
+            parsed.protocol === "https:"
+                ? https
+                : http;
 
-        const protocol =
-            parsed.protocol === "https:" ? https : http;
-
-        const request = protocol.get(
-            targetUrl,
-            {
-                headers: {
-                    "User-Agent":
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-                    "Accept":
-                        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language":
-                        "en-US,en;q=0.9",
-                    "Connection":
-                        "close"
-                }
+        const options = {
+            hostname: parsed.hostname,
+            port: parsed.port || undefined,
+            path: parsed.pathname + parsed.search,
+            method: "GET",
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+                "Accept":
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language":
+                    "en-US,en;q=0.9",
+                "Connection": "close"
             },
-            response => {
+            timeout: 15000
+        };
 
-                const status = response.statusCode || 0;
-                const location = response.headers.location || "";
+        const req = client.request(options, res => {
+            let body = "";
 
-                /* HTTP REDIRECT */
+            res.setEncoding("utf8");
+
+            res.on("data", chunk => {
+                body += chunk;
+            });
+
+            res.on("end", () => {
+                const status = res.statusCode || 0;
+
+                const location =
+                    res.headers.location;
+
+                // Normal HTTP redirect
                 if (
+                    location &&
                     status >= 300 &&
-                    status < 400 &&
-                    location
+                    status < 400
                 ) {
                     const nextUrl =
-                        new URL(
-                            location,
-                            targetUrl
-                        ).toString();
-
-                    response.resume();
+                        new URL(location, targetUrl).toString();
 
                     requestUrl(
                         nextUrl,
-                        redirectCount + 1
+                        redirects + 1
                     )
                         .then(resolve)
                         .catch(reject);
@@ -84,96 +141,43 @@ function requestUrl(targetUrl, redirectCount = 0) {
                     return;
                 }
 
-                let body = "";
-
-                response.setEncoding("utf8");
-
-                response.on("data", chunk => {
-                    if (body.length < 2000000) {
-                        body += chunk;
-                    }
+                resolve({
+                    url: targetUrl,
+                    finalUrl: targetUrl,
+                    status,
+                    headers: res.headers,
+                    body
                 });
-
-                response.on("end", () => {
-
-                    /* HTML REDIRECT / CANONICAL URL */
-
-                    const htmlRedirect =
-                        extractUrlFromHtml(
-                            body,
-                            targetUrl
-                        );
-
-                    if (htmlRedirect) {
-
-                        requestUrl(
-                            htmlRedirect,
-                            redirectCount + 1
-                        )
-                            .then(resolve)
-                            .catch(reject);
-
-                        return;
-                    }
-
-                    if (
-                        status >= 200 &&
-                        status < 400
-                    ) {
-                        resolve({
-                            finalUrl: targetUrl,
-                            html: body
-                        });
-                        return;
-                    }
-
-                    reject(
-                        new Error(
-                            "Unable to resolve link. HTTP " +
-                            status
-                        )
-                    );
-                });
-            }
-        );
-
-        request.on("error", error => {
-            reject(error);
+            });
         });
 
-        request.setTimeout(20000, () => {
-            request.destroy(
+        req.on("timeout", () => {
+            req.destroy(
                 new Error("Request timeout")
             );
         });
+
+        req.on("error", reject);
+
+        req.end();
     });
 }
 
+function extractGoogleUrlFromHtml(html) {
+    if (!html) return null;
 
-/* --------------------------------------------------
-   EXTRACT URL FROM HTML
--------------------------------------------------- */
+    // Canonical URL
+    const canonical =
+        html.match(
+            /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i
+        );
 
-function extractUrlFromHtml(html, baseUrl) {
-
-    if (!html) {
-        return null;
-    }
-
-    let match;
-
-    /* Canonical URL */
-    match = html.match(
-        /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i
-    );
-
-    if (match && match[1]) {
+    if (canonical && canonical[1]) {
         try {
-            const url =
-                new URL(
-                    match[1],
-                    baseUrl
-                ).toString();
+            const url = new URL(
+                canonical[1],
+                "https://www.google.com"
+            ).toString();
 
             if (
                 url.includes("google.com/maps") ||
@@ -181,509 +185,335 @@ function extractUrlFromHtml(html, baseUrl) {
             ) {
                 return url;
             }
-        } catch (error) {}
+        } catch {}
     }
 
-    /* Meta refresh */
-    match = html.match(
-        /<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=([^"']+)["']/i
-    );
+    // Meta refresh
+    const meta =
+        html.match(
+            /<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=([^"']+)["']/i
+        );
 
-    if (match && match[1]) {
+    if (meta && meta[1]) {
         try {
-            return new URL(
-                match[1].trim(),
-                baseUrl
+            const url = new URL(
+                meta[1],
+                "https://www.google.com"
             ).toString();
-        } catch (error) {}
+
+            if (
+                url.includes("google.com/maps") ||
+                url.includes("maps.google.com")
+            ) {
+                return url;
+            }
+        } catch {}
     }
 
-    /* Google Maps URL inside HTML */
-    match = html.match(
-        /https?:\/\/(?:www\.)?google\.com\/maps\/[^"'\\<\s]+/i
-    );
+    // Google Maps URL inside page source
+    const mapsMatch =
+        html.match(
+            /https?:\\?\/\\?\/(?:www\.)?google\.[^"'\\ ]+\/maps\/[^"'\\ ]+/i
+        );
 
-    if (match && match[0]) {
+    if (mapsMatch && mapsMatch[0]) {
         try {
-            return decodeHtmlEntities(
-                match[0]
-            );
-        } catch (error) {
-            return match[0];
-        }
+            return mapsMatch[0]
+                .replace(/\\u003d/g, "=")
+                .replace(/\\u0026/g, "&")
+                .replace(/\\/g, "");
+        } catch {}
     }
 
     return null;
 }
 
-
-/* --------------------------------------------------
-   HTML ENTITY CLEANUP
--------------------------------------------------- */
-
-function decodeHtmlEntities(text) {
-
-    return text
-        .replace(/&amp;/g, "&")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">");
-}
-
-
-/* --------------------------------------------------
-   CLEAN BUSINESS NAME
--------------------------------------------------- */
-
-function cleanBusinessName(name) {
-
-    if (!name) {
-        return null;
-    }
+async function resolveGoogleLink(inputUrl) {
+    let result;
 
     try {
-        name = decodeURIComponent(name);
-    } catch (error) {}
-
-    name = name.replace(/\+/g, " ");
-    name = name.replace(/\s+/g, " ");
-    name = name.trim();
-
-    return name || null;
-}
-
-
-/* --------------------------------------------------
-   EXTRACT BUSINESS NAME
--------------------------------------------------- */
-
-function extractBusinessName(targetUrl) {
-
-    try {
-
-        const parsed =
-            new URL(targetUrl);
-
-        /* /maps/place/Business+Name/ */
-        const placeMatch =
-            parsed.pathname.match(
-                /\/place\/([^/]+)/i
-            );
-
-        if (placeMatch) {
-
-            return cleanBusinessName(
-                placeMatch[1]
-            );
-        }
-
-        /* /maps/search/Business+Name */
-        const searchMatch =
-            parsed.pathname.match(
-                /\/maps\/(?:search|preview)\/([^/]+)/i
-            );
-
-        if (searchMatch) {
-
-            return cleanBusinessName(
-                searchMatch[1]
-            );
-        }
-
-        /* q parameter */
-        const q =
-            parsed.searchParams.get("q");
-
-        if (q) {
-            return cleanBusinessName(q);
-        }
-
-        /* query parameter */
-        const query =
-            parsed.searchParams.get("query");
-
-        if (query) {
-            return cleanBusinessName(query);
-        }
-
-        /* destination parameter */
-        const destination =
-            parsed.searchParams.get(
-                "destination"
-            );
-
-        if (destination) {
-            return cleanBusinessName(
-                destination
-            );
-        }
-
-        return null;
-
+        result = await requestUrl(inputUrl);
     } catch (error) {
-        return null;
+        throw new Error(
+            "Google link could not be opened: " +
+            error.message
+        );
     }
-}
 
-
-/* --------------------------------------------------
-   RESOLVE GOOGLE LINK
--------------------------------------------------- */
-
-async function resolveGoogleLink(originalUrl) {
-
-    const result =
-        await requestUrl(originalUrl);
-
-    let finalUrl =
-        result.finalUrl;
-
+    // First try the URL itself
     let businessName =
-        extractBusinessName(finalUrl);
+        extractBusinessName(result.finalUrl);
 
-    /* Try HTML one more time if needed */
-    if (!businessName && result.html) {
+    if (businessName) {
+        return {
+            businessName,
+            finalUrl: result.finalUrl
+        };
+    }
 
-        const htmlUrl =
-            extractUrlFromHtml(
-                result.html,
-                finalUrl
-            );
+    // Try URL found inside returned HTML
+    const googleUrl =
+        extractGoogleUrlFromHtml(result.body);
 
-        if (htmlUrl) {
+    if (googleUrl) {
+        businessName =
+            extractBusinessName(googleUrl);
 
-            finalUrl = htmlUrl;
+        if (businessName) {
+            return {
+                businessName,
+                finalUrl: googleUrl
+            };
+        }
+
+        try {
+            const second =
+                await requestUrl(googleUrl);
 
             businessName =
                 extractBusinessName(
-                    finalUrl
+                    second.finalUrl
                 );
+
+            if (businessName) {
+                return {
+                    businessName,
+                    finalUrl: second.finalUrl
+                };
+            }
+        } catch {}
+    }
+
+    // Try extracting directly from page HTML
+    if (result.body) {
+        const patterns = [
+            /\/maps\/place\/([^/\\?"'<]+)/i,
+            /\/maps\/preview\/place\/([^/\\?"'<]+)/i,
+            /\/maps\/search\/([^/\\?"'<]+)/i
+        ];
+
+        for (const pattern of patterns) {
+            const match =
+                result.body.match(pattern);
+
+            if (match && match[1]) {
+                businessName =
+                    cleanBusinessName(match[1]);
+
+                if (businessName) {
+                    return {
+                        businessName,
+                        finalUrl: result.finalUrl
+                    };
+                }
+            }
         }
     }
 
-    return {
-        originalUrl: originalUrl,
-        finalUrl: finalUrl,
-        businessName: businessName
-    };
-}
-
-
-/* --------------------------------------------------
-   JSON RESPONSE
--------------------------------------------------- */
-
-function sendJson(
-    res,
-    statusCode,
-    data
-) {
-
-    res.writeHead(
-        statusCode,
-        {
-            "Content-Type":
-                "application/json; charset=utf-8",
-            "Cache-Control":
-                "no-store",
-            "Access-Control-Allow-Origin":
-                "*"
-        }
-    );
-
-    res.end(
-        JSON.stringify(data)
+    throw new Error(
+        "Business name could not be found from this Google Maps link."
     );
 }
 
+function sendJson(res, statusCode, data) {
+    const json = JSON.stringify(data);
 
-/* --------------------------------------------------
-   SERVER
--------------------------------------------------- */
+    res.writeHead(statusCode, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "no-store",
+        "Content-Length": Buffer.byteLength(json)
+    });
 
-const server =
-    http.createServer(
-        async (req, res) => {
+    res.end(json);
+}
 
-            try {
+const server = http.createServer(
+    async (req, res) => {
+        try {
+            const requestUrlObject =
+                new URL(
+                    req.url,
+                    `http://${req.headers.host}`
+                );
 
-                const requestUrlObject =
-                    new URL(
-                        req.url,
-                        "http://localhost:" + PORT
+            // Google resolver
+            if (
+                requestUrlObject.pathname ===
+                "/resolve-google"
+            ) {
+                const googleUrl =
+                    requestUrlObject.searchParams.get(
+                        "url"
                     );
 
+                if (!googleUrl) {
+                    sendJson(res, 400, {
+                        error:
+                            "Google URL is required."
+                    });
 
-                /* GOOGLE LINK RESOLVER */
+                    return;
+                }
+
+                let parsed;
+
+                try {
+                    parsed = new URL(googleUrl);
+                } catch {
+                    sendJson(res, 400, {
+                        error:
+                            "Invalid Google URL."
+                    });
+
+                    return;
+                }
+
+                const hostname =
+                    parsed.hostname.toLowerCase();
 
                 if (
-                    requestUrlObject.pathname ===
-                    "/resolve-google"
+                    !hostname.includes("google.com") &&
+                    !hostname.includes("googleusercontent.com") &&
+                    !hostname.includes("goo.gl")
                 ) {
+                    sendJson(res, 400, {
+                        error:
+                            "Only Google Maps links are allowed."
+                    });
 
-                    const targetUrl =
-                        requestUrlObject.searchParams.get(
-                            "url"
-                        );
+                    return;
+                }
 
-                    if (!targetUrl) {
-
-                        sendJson(
-                            res,
-                            400,
-                            {
-                                error:
-                                    "URL is required"
-                            }
-                        );
-
-                        return;
-                    }
-
-
-                    let parsedTarget;
-
-                    try {
-
-                        parsedTarget =
-                            new URL(
-                                targetUrl
-                            );
-
-                    } catch (error) {
-
-                        sendJson(
-                            res,
-                            400,
-                            {
-                                error:
-                                    "Invalid URL"
-                            }
-                        );
-
-                        return;
-                    }
-
-
-                    if (
-                        parsedTarget.protocol !== "http:" &&
-                        parsedTarget.protocol !== "https:"
-                    ) {
-
-                        sendJson(
-                            res,
-                            400,
-                            {
-                                error:
-                                    "Only HTTP and HTTPS URLs are supported"
-                            }
-                        );
-
-                        return;
-                    }
-
-
+                try {
                     const result =
                         await resolveGoogleLink(
-                            targetUrl
+                            googleUrl
                         );
 
+                    sendJson(res, 200, result);
+                } catch (error) {
+                    console.error(
+                        "Google resolver error:",
+                        error.message
+                    );
 
-                    if (!result.businessName) {
+                    sendJson(res, 500, {
+                        error: error.message
+                    });
+                }
 
-                        sendJson(
-                            res,
-                            400,
-                            {
-                                error:
-                                    "Business name could not be found from this link.",
-                                finalUrl:
-                                    result.finalUrl
-                            }
-                        );
+                return;
+            }
 
+            // CORS preflight
+            if (req.method === "OPTIONS") {
+                res.writeHead(204, {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods":
+                        "GET, OPTIONS",
+                    "Access-Control-Allow-Headers":
+                        "Content-Type"
+                });
+
+                res.end();
+                return;
+            }
+
+            // Static files
+            let filePath =
+                requestUrlObject.pathname === "/"
+                    ? path.join(
+                          __dirname,
+                          "index.html"
+                      )
+                    : path.join(
+                          __dirname,
+                          requestUrlObject.pathname
+                      );
+
+            filePath = path.normalize(filePath);
+
+            // Prevent access outside project folder
+            if (
+                !filePath.startsWith(
+                    path.normalize(__dirname)
+                )
+            ) {
+                res.writeHead(403);
+                res.end("Forbidden");
+                return;
+            }
+
+            fs.readFile(
+                filePath,
+                (error, content) => {
+                    if (error) {
+                        res.writeHead(404, {
+                            "Content-Type":
+                                "text/plain; charset=utf-8"
+                        });
+
+                        res.end("Not Found");
                         return;
                     }
 
+                    const ext =
+                        path.extname(filePath)
+                            .toLowerCase();
 
-                    sendJson(
-                        res,
-                        200,
-                        result
-                    );
+                    const mimeTypes = {
+                        ".html":
+                            "text/html; charset=utf-8",
+                        ".js":
+                            "application/javascript; charset=utf-8",
+                        ".css":
+                            "text/css; charset=utf-8",
+                        ".json":
+                            "application/json; charset=utf-8",
+                        ".png":
+                            "image/png",
+                        ".jpg":
+                            "image/jpeg",
+                        ".jpeg":
+                            "image/jpeg",
+                        ".svg":
+                            "image/svg+xml",
+                        ".ico":
+                            "image/x-icon"
+                    };
 
-                    return;
+                    res.writeHead(200, {
+                        "Content-Type":
+                            mimeTypes[ext] ||
+                            "application/octet-stream"
+                    });
+
+                    res.end(content);
                 }
+            );
+        } catch (error) {
+            console.error(
+                "Server error:",
+                error
+            );
 
+            res.writeHead(500, {
+                "Content-Type":
+                    "text/plain; charset=utf-8"
+            });
 
-                /* NORMAL FILES */
-
-                let relativePath =
-                    requestUrlObject.pathname;
-
-                if (
-                    relativePath === "/"
-                ) {
-                    relativePath =
-                        "/index.html";
-                }
-
-
-                const safeRelativePath =
-                    path.normalize(
-                        relativePath
-                    );
-
-                const filePath =
-                    path.join(
-                        __dirname,
-                        safeRelativePath
-                    );
-
-                const rootPath =
-                    path.resolve(
-                        __dirname
-                    );
-
-                const resolvedFilePath =
-                    path.resolve(
-                        filePath
-                    );
-
-
-                if (
-                    resolvedFilePath !==
-                        rootPath &&
-                    !resolvedFilePath.startsWith(
-                        rootPath + path.sep
-                    )
-                ) {
-
-                    res.writeHead(403);
-                    res.end("Forbidden");
-
-                    return;
-                }
-
-
-                fs.readFile(
-                    resolvedFilePath,
-                    (error, data) => {
-
-                        if (error) {
-
-                            res.writeHead(
-                                404,
-                                {
-                                    "Content-Type":
-                                        "text/plain; charset=utf-8"
-                                }
-                            );
-
-                            res.end(
-                                "File not found"
-                            );
-
-                            return;
-                        }
-
-
-                        let contentType =
-                            "application/octet-stream";
-
-
-                        if (
-                            resolvedFilePath.endsWith(
-                                ".html"
-                            )
-                        ) {
-
-                            contentType =
-                                "text/html; charset=utf-8";
-                        }
-
-
-                        if (
-                            resolvedFilePath.endsWith(
-                                ".js"
-                            )
-                        ) {
-
-                            contentType =
-                                "text/javascript; charset=utf-8";
-                        }
-
-
-                        if (
-                            resolvedFilePath.endsWith(
-                                ".css"
-                            )
-                        ) {
-
-                            contentType =
-                                "text/css; charset=utf-8";
-                        }
-
-
-                        if (
-                            resolvedFilePath.endsWith(
-                                ".json"
-                            )
-                        ) {
-
-                            contentType =
-                                "application/json; charset=utf-8";
-                        }
-
-
-                        res.writeHead(
-                            200,
-                            {
-                                "Content-Type":
-                                    contentType,
-                                "Cache-Control":
-                                    "no-cache"
-                            }
-                        );
-
-                        res.end(data);
-                    }
-                );
-
-            } catch (error) {
-
-                console.error(
-                    "SERVER ERROR:",
-                    error
-                );
-
-                sendJson(
-                    res,
-                    500,
-                    {
-                        error:
-                            error.message ||
-                            "Server error"
-                    }
-                );
-            }
+            res.end("Internal Server Error");
         }
-    );
-
-
-/* --------------------------------------------------
-   START SERVER
--------------------------------------------------- */
+    }
+);
 
 server.listen(
     PORT,
-    "0.0.0.0",
+    HOST,
     () => {
-
         console.log(
-            "Mobile Simulator running on port " +
-            PORT
+            `Server running on ${HOST}:${PORT}`
         );
     }
 );
